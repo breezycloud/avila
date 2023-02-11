@@ -7,8 +7,8 @@
     <ServiceWorkerAssetsManifest>service-worker-assets.js</ServiceWorkerAssetsManifest>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EmccExtraLDFlags>-s WARN_ON_UNDEFINED_SYMBOLS=0</EmccExtraLDFlags>
-    <!--
-    <StaticWebAssetsAdditionalPublishPropertiesToRemove>$(StaticWebAssetsAdditionalPublishPropertiesToRemove);SelfContained</StaticWebAssetsAdditionalPublishPropertiesToRemove>-->
+    <BlazorEnableTimeZoneSupport>false</BlazorEnableTimeZoneSupport>
+    <BlazorWebAssemblyPreserveCollationData>false</BlazorWebAssemblyPreserveCollationData>    
   </PropertyGroup>
 
   <ItemGroup>
