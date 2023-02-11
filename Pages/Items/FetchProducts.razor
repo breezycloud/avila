@@ -1,0 +1,141 @@
+@page "/products"
+
+@if (isLoading)
+{
+    <LoaderRows />
+}
+else
+{
+    <MudTable Items="@AppState.Items" Virtualize="true" Filter="new Func<Item, bool>(SearchProduct)" 
+        Dense="true" Hover="true" Striped="true" Outlined="true">
+        <ToolBarContent>            
+            <MudTooltip Text="Report" Duration="1000" Placement="Placement.Top">
+                <MudIconButton Icon="@Icons.Material.Filled.Print" OnClick="@(() => Dialog.Show<ItemReportDialog>())" />
+            </MudTooltip>
+            <MudSpacer />
+            <MudTextField @bind-Value="searchString" Immediate="true" Placeholder="Search" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Name</MudTh>
+            <MudTh>Category</MudTh>
+            <MudTh Style="text-align:center;">Quantity</MudTh>
+            <MudTh Style="text-align:right;">Buy Price</MudTh>
+            <MudTh Style="text-align:right;">Sell Price</MudTh>
+            <MudTh Style="text-align:center;">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">@context.ItemName</MudTd>
+            <MudTd DataLabel="Category">@context.Category!.CategoryName</MudTd>
+            <MudTd DataLabel="Quantity" Style="text-align:center;">@context.Quantity</MudTd>
+            <MudTd DataLabel="Buy Price" Style="text-align:right;">@context!.BuyPrice!.Value.ToString("N2")</MudTd>
+            <MudTd DataLabel="Sell Price" Style="text-align:right;">@context!.SellPrice!.Value.ToString("N2")</MudTd>
+            <MudTd DataLabel="Actions" Style="text-align:center;">
+                <MudTooltip Text="Edit" Placement="Placement.Top">
+                    <MudFab Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                        OnClick="@(() => nav.NavigateTo($"editproduct/{context.Id}"))" IconSize="Size.Small" Color="Color.Info" />
+                </MudTooltip>
+                <MudTooltip Text="Restock" Placement="Placement.Top">
+                    <MudFab Icon="@Icons.Material.Filled.Refresh" Size="Size.Small"
+                        OnClick="@(() => AddStock(context))" IconSize="Size.Small" Color="Color.Tertiary" />
+                </MudTooltip>
+                <MudTooltip Text="Delete" Placement="Placement.Top">
+                    <MudFab Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Disabled="@isDeleting"
+                        OnClick="@(() => Delete(context))" IconSize="Size.Small" Color="Color.Error" />
+                </MudTooltip>
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
+    <div class="fabs-container">
+        <MudFab Class="fab" OnClick="@(() => nav.NavigateTo("newproduct"))" Color="Color.Primary" Icon="@Icons.Material.Filled.Add" />
+    </div>
+}
+
+@code {
+    private string searchString = "";
+    private Item product = new();
+    private bool isVisible { get; set; } = false;
+    private bool isBusy = false, isLoading, isDeleting = false;
+    private string progressVisibility => isBusy ? "visibility: visible;" : "visibility: collapse;";
+    private string operationType => isEdit ? "Edit" : "Add";
+    public bool isEdit { get; set; }
+
+    EsModuleFactory? moduleFactory;
+    protected override async Task OnInitializedAsync()
+    {        
+        isLoading = true;
+        LayoutService.CurrentMenu = "Manage Products";
+        LayoutService.OnMajorUpdateOccured();
+        var reference = DotNetObjectReference.Create(this);
+        await js.InvokeVoidAsync("passItemDotNetObject", reference);
+        await Task.Delay(300);
+        await ReloadData();
+        isLoading = false;
+    }
+
+
+    async Task Delete(Item product)
+    {
+        isDeleting = true;
+        bool? result = await Dialog.ShowMessageBox("Confirmation",
+        $"Do you wish to Delete Product?", yesText: "Yes", cancelText: "No");
+        if (result is null)
+        {
+            isDeleting = false;
+            return;
+        }
+        else if (!result.Value)
+        {
+            isDeleting = false;
+            return;
+        }
+        var db = new MyDb(moduleFactory!);
+        try
+        {            
+            snackBar.Add($"Product successfully deleted!", Severity.Success);
+        }
+        catch (System.Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            snackBar.Add($"Error occured!", Severity.Error);
+        }
+        finally
+        {
+            await db.DisposeAsync();
+            await ReloadData();            
+            isDeleting = false;
+        }
+    }
+
+    void AddStock(Item product)
+    {
+        AppState!.Item = product;
+        Dialog.Show<ProductStock>("");
+    }
+
+    [JSInvokable("RefreshProducts")]
+    private async Task ReloadData(bool refreshUI = false)
+    {
+        moduleFactory = new EsModuleFactory(js);
+        var db = new MyDb(moduleFactory);
+        AppState.Items = await db.Items.OrderBy(nameof(Item.ModifiedTicks)).ToArray();
+        await db.DisposeAsync();
+        if (refreshUI) { StateHasChanged(); }
+
+    }
+
+    private bool SearchProduct(Item product)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+        if (product!.ItemName!.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (product!.Category!.CategoryName!.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+}

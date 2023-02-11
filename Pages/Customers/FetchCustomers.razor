@@ -1,0 +1,200 @@
+@page "/customers"
+
+@if (AppState.IsBusy)
+{
+    <LoaderRows/>    
+}
+else
+{
+    <MudTable Items="@AppState.Customers" Dense="true" Hover="@true" Outlined="true"
+        Filter="new Func<Customer, bool>(FilterFunc)" OnRowClick="RowClickEvent" T="Customer">
+        <ToolBarContent>
+            <MudTooltip Text="Report" Duration="1000" Placement="Placement.Top">
+                <MudIconButton Icon="@Icons.Material.Filled.Print" OnClick="@(() => Dialog.Show<Debitors>())" />
+            </MudTooltip>
+            <MudSpacer />
+            <MudTextField @bind-Value="AppState.searchString" Placeholder="Search" Immediate="true"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0">
+            </MudTextField>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Name</MudTh>
+            <MudTh>Mobile No 1</MudTh>
+            <MudTh>Mobile No 2</MudTh>
+            <MudTh>Email</MudTh>
+            <MudTh>Username</MudTh>
+            <MudTh>Birthday</MudTh>
+            <MudTh>Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">@context.CustomerName</MudTd>
+            <MudTd DataLabel="Mobile No 1">@context.MobileNo1</MudTd>
+            <MudTd DataLabel="Mobile No 2">@context.MobileNo2</MudTd>
+            <MudTd DataLabel="Email">@context.Email</MudTd>
+            <MudTd DataLabel="Username">@context.Username</MudTd>
+            <MudTd DataLabel="Birthday" Style="text-align:center">@($"{context.Bday}/{context.Bmonth}")</MudTd>
+            <MudTd DataLabel="Actions" Style="text-align:center">
+                <MudTooltip Text="Edit Customer" Placement="Placement.Top">
+                    <MudFab Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                    IconSize="Size.Small" Color="Color.Info"
+                    OnClick="@(() => EditCustomerDialog(context.Id))" />
+                </MudTooltip>
+                <MudTooltip Text="Order Hisotry" Duration="1000" Placement="Placement.Top">
+                    <MudFab Icon="@Icons.Material.Filled.Print" Size="Size.Small"
+                    IconSize="Size.Small" Color="Color.Tertiary" Disabled="@isPrinting"
+                    OnClick="@(() => OpenDialog(context))" />
+                </MudTooltip>
+                <MudTooltip Text="Delete" Duration="1000" Placement="Placement.Top">
+                    <MudFab Disabled="@AppState.IsProcessing" Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                    OnClick="@(async () => await DeleteCustomer(context))" IconSize="Size.Small" Color="Color.Secondary" />
+                </MudTooltip>
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
+    <div class="fabs-container">
+        <MudFab @onclick="CustomerDialog" Class="fab" Color="Color.Primary" Icon="@Icons.Material.Filled.Add" />
+    </div>
+}    
+
+<MudDialog IsVisible="isVisible">
+    <TitleContent>
+        <MudText Typo="Typo.h6">            
+            Customer Order History
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <div class="d-flex justify-center">
+            <MudRadioGroup T="string" @bind-SelectedOption="reportType">                        
+                <MudRadio Color="Color.Primary" Option="@("All")">All</MudRadio>
+                <MudRadio Color="Color.Primary" Option="@("Date")">Date</MudRadio>
+            </MudRadioGroup>
+        </div>
+        <div class="d-flex align-center justify-center" style="@isDayItem">
+            <MudDatePicker Label="Date" DateFormat="dd/MM/yyyy" PickerVariant="PickerVariant.Dialog" @bind-Date="filterDate" />
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="PrintCustomerInfo" Disabled="@isPrinting" Variant="Variant.Filled" Color="Color.Primary" Class="px-10">@(isPrinting ? "Processing" : "Download")</MudButton>
+    </DialogActions>    
+</MudDialog>
+    @code {
+    private string reportType = string.Empty;
+    private DateTime? filterDate;
+    private bool isVisible, isPrinting = false;
+    string isDayItem => reportType == "Date" ? "visibility:visible;" : "visibility:collapse;";
+    Guid CustomerID { get; set; }
+    EsModuleFactory? moduleFactory;
+    protected override async Task OnInitializedAsync()
+    {
+        AppState.IsBusy = true;
+        LayoutService.CurrentMenu = "Customers";
+        moduleFactory = new EsModuleFactory(js);
+        var db = new MyDb(moduleFactory);
+        try
+        {
+            await Task.Delay(500);
+            AppState.Customers = await db.Customers.ToArray();
+        }
+        finally
+        {
+            AppState.IsBusy = false;
+            LayoutService.OnMajorUpdateOccured();
+            await db.DisposeAsync();
+        }        
+    }
+
+    private bool FilterFunc(Customer customer)
+    {
+        if (string.IsNullOrWhiteSpace(AppState.searchString))
+            return true;
+        if (customer!.CustomerName!.Contains(AppState.searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (customer!.MobileNo1!.Contains(AppState.searchString, StringComparison.OrdinalIgnoreCase))
+            return true;        
+        if (customer!.MobileNo2!.Contains(AppState.searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (customer!.Username!.Contains(AppState.searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
+    }
+
+    private void RowClickEvent(TableRowClickEventArgs<Customer> tableRowClickEventArgs)
+    {
+        EditCustomerDialog(tableRowClickEventArgs.Item.Id);
+    }
+
+
+    private void CustomerDialog() => nav.NavigateTo($"Customer/{true}");
+
+    private void EditCustomerDialog(Guid id) => nav.NavigateTo($"/customer/{false}/{id}");
+
+    private async ValueTask<bool> Confirmation(string operationType)
+    {
+        bool? result = await Dialog.ShowMessageBox("Confirmation",
+        $"Do you wish to {operationType} Customer?",
+         yesText: "Yes", cancelText:"No");
+        if (result is null)
+            return false;
+
+        return true;
+    }
+
+    private async Task DeleteCustomer(Customer model)
+    {
+        AppState.IsProcessing = true;
+        var promptResult = await Confirmation("Delete");
+        if (!promptResult)
+        {
+            AppState.IsProcessing = false;
+            return;
+        }
+        var db = new MyDb(moduleFactory!);
+        try
+        {
+            await db.Customers.Delete(model.Id);
+            snackBar.Add("Customer Successfully Deleted", Severity.Success);
+            await OnInitializedAsync();
+
+        }
+        catch (System.Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            snackBar.Add("Operation failed", Severity.Error);
+        }        
+        AppState.IsProcessing = false;
+    }
+
+
+    void OpenDialog(Customer customer)
+    {
+        var parameters = new DialogParameters
+        {
+            ["SelectedOption"] = "Customer",
+            ["customer"] = customer
+        };
+        Dialog.Show<Debitors>("", parameters);
+    }
+    async Task PrintCustomerInfo()
+    {
+        isPrinting = true;
+        try
+        {
+            await Dialog.ShowMessageBox("Notification", "Function is progress");
+        }
+        catch (System.Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+        finally
+        {
+            filterDate = null;
+            isPrinting = false;
+            isVisible = false;            
+        }        
+        StateHasChanged();
+    }
+}

@@ -1,0 +1,180 @@
+@page "/customer/{isAddEdit:bool}"
+@page "/customer/{isAddEdit:bool}/{Id:guid}"
+
+@if (AppState.IsBusy)
+{
+    <LoaderRows/>
+}
+else
+{
+    <EditForm Model="@customer" OnValidSubmit="OnValidSubmit">
+        <DataAnnotationsValidator />
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudTextField Variant="Variant.Outlined" Margin="Margin.Dense" Label="First name" @bind-Value="customer!.FirstName"
+                          For="@(() => customer!.FirstName)"></MudTextField>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField Variant="Variant.Outlined" Margin="Margin.Dense" Label="Last name" @bind-Value="customer!.LastName"
+                          For="@(() => customer!.LastName)"></MudTextField>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField Variant="Variant.Outlined" Margin="Margin.Dense" Label="Contact No1" @bind-Value="customer!.MobileNo1"
+                          For="@(() => customer!.MobileNo1)"></MudTextField>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField Variant="Variant.Outlined" Margin="Margin.Dense" Label="Contact No2" @bind-Value="customer!.MobileNo2"
+                          For="@(() => customer!.MobileNo2)"></MudTextField>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField Label="Username" Margin="Margin.Dense" @bind-Value="customer!.Username" For="@(() => customer!.Username)" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField Label="Email" Margin="Margin.Dense" @bind-Value="customer!.Email" For="@(() => customer!.Email)" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField Variant="Variant.Outlined" Margin="Margin.Dense" Label="Home Address" @bind-Value="customer!.ContactAddress"
+                          For="@(() => customer!.ContactAddress)" Lines="4"></MudTextField>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudNumericField T="int" @bind-Value="@customer!.Bday" Variant="Variant.Outlined" Margin="Margin.Dense" Label="Birth Day" Max="31" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudNumericField T="int" @bind-Value="@customer!.Bmonth" Variant="Variant.Outlined" Margin="Margin.Dense" Label="Birth Month" Max="12" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <div class="d-flex justify-center align-center">
+                    <MudFab Color="Color.Dark" Label="Back" OnClick="@(() => nav.NavigateTo("customers"))"
+                        Style="width:200px;" Size="Size.Small" StartIcon="@Icons.Material.Filled.ArrowBack" />
+                </div>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <div class="d-flex justify-center align-center">
+                    <MudFab ButtonType="ButtonType.Submit" Color="Color.Primary" Label="@(AppState.IsProcessing ? "Processing" : "Save")"
+                        Style="width:200px;" 
+                        Disabled="@AppState.IsProcessing" Size="Size.Small" EndIcon="@Icons.Material.Filled.Save" />
+                </div>
+            </MudItem>
+    </MudGrid>
+</EditForm>
+}
+
+@code {
+
+    private bool isProcessing = false;
+    private string ProcessStatus => isProcessing ? "Processing" : "Save";
+    private Customer? customer = new();
+    [Parameter] public Guid id { get; set; }
+    [Parameter] public bool isAddEdit { get; set; }    
+    private string operationType => isAddEdit ? "Added" : "Edited";     
+
+    private string[] religions = new[]
+    {
+        "Christian",
+        "Muslim",
+        "Rather not say"
+    };
+    EsModuleFactory? moduleFactory;
+    protected override async Task OnParametersSetAsync()
+    {
+        AppState.IsBusy = true;
+        await Task.Delay(500);
+        LayoutService.CurrentMenu = id == Guid.Empty ? "New Customer" : "Edit Customer";
+        moduleFactory = new EsModuleFactory(js);
+        var db = new MyDb(moduleFactory);
+        try
+        {            
+            if (isAddEdit)
+            {
+                customer = new();
+            }
+            else
+            {
+                customer!.Id = id;
+                customer = await db.Customers.Get(id);
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Console.WriteLine(ex);
+        }            
+        finally
+        {
+            AppState.IsBusy = false;
+            await db.DisposeAsync();
+            LayoutService.OnMajorUpdateOccured();
+        }
+    }    
+
+    private async Task OnValidSubmit()
+    {
+        var db = new MyDb(moduleFactory!);        
+        AppState.IsProcessing = true;
+        try
+        {           
+            var prompt = await Dialog.ShowMessageBox("Confirmation", $"Do you wish to {(isAddEdit ? "Add" : "Edit")} Customer data", yesText:"Yes", cancelText:"No");
+            if (prompt is null)
+            {
+                isProcessing = false;
+                return;
+            }
+            else if (!prompt.Value)
+            {
+                isProcessing = false;
+                return;
+            }            
+            customer!.FirstName = StringConverter.ConvertToTitleCase(customer.FirstName!);
+            customer.LastName = StringConverter.ConvertToTitleCase(customer.LastName!);       
+            if (isAddEdit)
+            {
+                var customerExist = await db.Customers.Where(nameof(Customer.MobileNo1)).IsEqual(id).ToArray();
+
+                if (customerExist.Any())
+                {
+                    var exist = customerExist.FirstOrDefault();
+                    await Dialog.ShowMessageBox("Warning", $"{exist!.CustomerName} already registered with this Phone No: {exist.MobileNo1}");
+                    AppState.IsProcessing = false;
+                    return;
+                }                
+                await db.Customers.Add(customer);                
+                snackBar.Add("Customer Successfully Added", Severity.Success);
+                customer = new();                
+            }
+            else
+            {
+                await db.Customers.Put(customer);
+                snackBar.Add("Customer Successfully Edited", Severity.Success);
+                await OnParametersSetAsync();
+            }            
+        }
+        catch (System.Exception ex)
+        {
+            Console.WriteLine($"{ex.Message} {ex.Data} {ex.StackTrace} {ex.Source} {ex.InnerException}");
+        }
+        finally
+        {            
+            AppState.IsProcessing = false;
+            await db.DisposeAsync();
+        }
+    }    
+    
+
+    void ClearSelection()
+    {
+        customer = new();
+        if (!isAddEdit)
+        {
+            nav.NavigateTo("customers");
+        }
+    }
+
+    void BirthDayChanged(DateTime? date)
+    {
+        if (date is not null)
+        {
+            customer!.Bday = date.Value.Day;
+            customer!.Bmonth = date.Value.Month;
+            StateHasChanged();
+        }       
+    }
+}

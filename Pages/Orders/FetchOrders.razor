@@ -1,0 +1,114 @@
+@page "/orders"
+@using AvilaNaturalle.Reports;
+
+
+
+@if (Orders == null)
+{
+    <LoaderRows />
+}
+else
+{
+    <MudTable Items="@Orders" Virtualize="true" Dense="true" Hover="true" Striped="true" Outlined="true"
+          Filter="new Func<Order, bool>(FilterFunc)">
+        <ToolBarContent>
+            <MudTooltip Text="Report" Duration="1000" Placement="Placement.Top">
+                <MudIconButton Icon="@Icons.Material.Filled.Print" OnClick="@(() => Dialog.Show<SalesReportDialog>())" />
+            </MudTooltip>
+            <MudSpacer/>
+            <MudTextField @bind-Value="AppState.searchString" Placeholder="Search" Immediate="true"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0">
+            </MudTextField>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Customer</MudTh>
+            <MudTh>Receipt #</MudTh>
+            <MudTh>Date</MudTh>
+            <MudTh Style="text-align:right;">Total</MudTh>
+            <MudTh Style="text-align:right;">Paid</MudTh>
+            <MudTh Style="text-align:right;">Balance</MudTh>
+            <MudTh>Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Customer">@context.Customer!.CustomerName</MudTd>
+            <MudTd DataLabel="Receipt #">@context.ReceiptNo</MudTd>
+            <MudTd DataLabel="Date">@context.TransactionDate</MudTd>
+            <MudTd DataLabel="Total" Style="text-align:right;">@context.TotalAmount.ToString("N2")</MudTd>
+            <MudTd DataLabel="Paid" Style="text-align:right;">@context.PaymentDetails!.Sum(x => x.Amount).ToString("N2")</MudTd>
+            <MudTd DataLabel="Balance" Style="text-align:right;">@context.Balance.ToString("N2")</MudTd>
+            <MudTd DataLabel="Actions">
+                <MudTooltip Text="Manage Order">
+                    <MudFab Icon="@Icons.Material.Filled.Edit" OnClick="@(() => NavigateMenu(context))"
+                        Size="Size.Small" IconSize="Size.Small" Color="Color.Secondary" />
+                </MudTooltip>
+                <MudTooltip Text="Share Receipt">
+                    <MudFab Disabled="@isPrinting" Icon="@Icons.Material.Filled.Share" OnClick="@(() => Share(@context))"
+                        Size="Size.Small" IconSize="Size.Small" Color="Color.Success" />
+                </MudTooltip>
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
+    <div class="fabs-container">
+        <MudFab Class="fab" Color="Color.Primary" @onclick="@(() => nav.NavigateTo("neworder"))" Icon="@Icons.Material.Filled.Add" />
+    </div>
+}
+
+@code {
+    private bool isPrinting = false;
+    private Order[]? Orders = null;
+
+    EsModuleFactory? moduleFactory;
+    protected override async Task OnInitializedAsync()
+    {
+        LayoutService.CurrentMenu = "Manage Orders";
+        LayoutService.OnMajorUpdateOccured();
+        moduleFactory = new EsModuleFactory(js);
+        await Task.Delay(300);
+        await LoadOrders();
+    }
+    async Task LoadOrders()
+    {
+        var db = new MyDb(moduleFactory!);
+        Orders = await db.Orders.OrderBy(nameof(Order.TransactionDate)).Reverse().ToArray();
+    }   
+
+    private bool FilterFunc(Order order)
+    {
+        if (string.IsNullOrWhiteSpace(AppState.searchString))
+            return true;
+        if (order!.Customer!.CustomerName!.Contains(AppState.searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (order.TransactionDate.ToString().Contains(AppState.searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (order!.ReceiptNo!.Contains(AppState.searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    private void NavigateMenu(Order order)
+    {
+        AppState.Order = order;
+        nav.NavigateTo("manageorder");
+    }    
+
+    private async Task Share(Order order)
+    {
+        try
+        {
+            isPrinting = true;
+            var qr = await _converter.GenerateQR(order.Id);
+            var receipt = new Receipt(order, qr);
+            var data = receipt.Create();
+            await js.InvokeVoidAsync("getFile", $"Receipt {order.ReceiptNo}.pdf", "application", "pdf", data);
+            await js.InvokeAsync<bool>("shareInvite");
+            isPrinting = false;
+        }
+        catch (System.Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+    }
+}

@@ -1,0 +1,123 @@
+﻿@using AvilaNaturalle.Reports;
+@if (AppState.IsBusy)
+{
+    <Loader />
+}
+else
+{
+    <MudDialog>
+        <TitleContent>
+            <MudText Typo="Typo.h6">Sales Report</MudText>
+        </TitleContent>
+        <DialogContent>
+            <MudGrid Class="pa-3" Spacing="2">
+                <MudItem xs="12">
+                    <MudDatePicker Label="From" DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" PickerVariant="PickerVariant.Dialog" @bind-Date="filterStartDate" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudDatePicker Label="To" DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" PickerVariant="PickerVariant.Dialog" @bind-Date="filterEndDate" />
+                </MudItem>
+            </MudGrid>
+        </DialogContent>
+        <DialogActions>
+            <MudButton Disabled="AppState.IsProcessing" OnClick="GetReportItems" ButtonType="ButtonType.Submit" Variant="Variant.Filled"
+                   Color="Color.Primary">@(AppState.IsProcessing ? "Processing" : "Download")</MudButton>
+            </DialogActions>
+        </MudDialog>
+}
+
+@code {
+    private string? SelectedOption { get; set; }
+    DateTime? filterStartDate, filterEndDate;
+    EsModuleFactory? moduleFactory;
+    protected override async Task OnInitializedAsync()
+    {
+        AppState!.IsBusy = true;
+        await Task.Delay(200);
+        moduleFactory = new EsModuleFactory(js);
+        AppState!.IsBusy = false;
+    }
+    DateTime startDate;
+    DateTime endDate;
+    async Task GetReportItems()
+    {        
+        AppState.IsProcessing = true;
+        if (filterStartDate is null && filterEndDate is null)
+        {
+            snackBar.Add("Select from date", Severity.Warning);
+            AppState.IsProcessing = false;
+            return;
+        }
+        else if (filterEndDate is not null && filterStartDate is null)
+        {
+            snackBar.Add("Select from date", Severity.Warning);
+            AppState.IsProcessing = false;
+            return;
+        }        
+        else if (filterStartDate is not null && filterEndDate is null)
+        {
+            SelectedOption = "Date"; startDate = filterStartDate.Value;
+        }
+        else if (filterStartDate is not null && filterEndDate is not null)
+        {
+            SelectedOption = "Range"; startDate = filterStartDate.Value; endDate = filterEndDate.Value;
+        }
+        string? reportHeader = string.Empty;
+        var db = new MyDb(moduleFactory!);
+        Order[] orders = await db.Orders.ToArray();
+        try
+        {
+            List<SalesReportModel>? data = null;
+            if (SelectedOption == "Date")
+            {
+                var orderItems = orders.Where(x => x.TransactionDate.Date == startDate.Date).SelectMany(x => x.OrderItems!).ToArray();
+                data = orderItems.GroupBy(x => x.ItemId)
+                                 .Select(x => new SalesReportModel
+                                 {
+                                    Date = $"{startDate.Date.ToString("dd/MM/yyyy")}",
+                                    ItemName = x.Select(x => x!.Item!.ItemName).First(),
+                                    Category = x.Select(x => x!.Item!.Category!.CategoryName).First(),
+                                    BuyPrice = x.Select(x => x!.Item!.BuyPrice).First()!.Value,
+                                    SellPrice = x.Select(x => x!.Item!.SellPrice).First()!.Value,
+                                    SellPriceArray = x.Select(x => (x.Price * x.Quantity)).ToArray(),
+                                    SoldQty = x.Select(x => x!.Quantity).Sum(),                                     
+                                 }).ToList();
+            }
+            else
+            {
+                var orderItems = orders.Where(x => x.TransactionDate.Date >= startDate.Date 
+                        && x.TransactionDate.Date <= endDate.Date).SelectMany(x => x.OrderItems!).ToArray();
+                data = orderItems.GroupBy(x => x.ItemId)
+                                 .Select(x => new SalesReportModel
+                                 {
+                                    Date = $"{startDate.Date.ToString("dd/MM/yyyy")} - {endDate.Date.ToString("dd/MM/yyyy")}",
+                                    ItemName = x.Select(x => x!.Item!.ItemName).First(),
+                                    Category = x.Select(x => x!.Item!.Category!.CategoryName).First(),
+                                    BuyPrice = x.Select(x => x!.Item!.BuyPrice).First()!.Value,
+                                    SellPrice = x.Select(x => x!.Item!.SellPrice).First()!.Value,
+                                    SellPriceArray = x.Select(x => (x.Price * x.Quantity)).ToArray(),
+                                    SoldQty = x.Sum(x => x!.Quantity)
+                                 }).ToList();                
+            }
+
+            if (data!.Count == 0)
+            {
+                snackBar.Add("No data found", Severity.Warning);
+                AppState.IsProcessing = false;
+                return;
+            }
+            var report = new SalesReport(data);
+            var bytes = report.Create();
+            await js.InvokeVoidAsync("exportFile", $"Sales Report {DateTime.Now.Ticks}.pdf", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
+        }
+        finally
+        {
+            await db.DisposeAsync();
+            AppState.IsProcessing = false;
+        }
+    }
+}

@@ -1,0 +1,73 @@
+﻿<MudCard Outlined="true">
+    <MudCardContent>        
+        <MudStack Row="true" Spacing="2" Justify="Justify.SpaceBetween">
+            <strong>@Item!.Item!.ItemName</strong>
+            <MudTooltip Duration="1000" Text="Remove Item">
+                <MudIconButton Color="Color.Error" OnClick="@(() => RemoveItem(Item))" Icon="@Icons.Material.Filled.Delete" Size="Size.Small" />
+            </MudTooltip>
+        </MudStack>
+        <MudText Typo="Typo.body2">@Item!.Item!.Description</MudText>
+        <MudStack Row="true" Spacing="2" Justify="Justify.SpaceBetween">
+            <MudText Typo="Typo.caption">
+                x<strong>@(Item!.Quantity)</strong>
+                <span>
+                    <MudTooltip Duration="1000" Text="Reduce Quantity">
+                        <MudIconButton OnClick="@(() => RemoveQuantity(Item))" Icon="@Icons.Material.Filled.ExpandMore" Size="Size.Small" />
+                    </MudTooltip>
+                    <MudTooltip Duration="1000" Text="Add Quantity">
+                        <MudIconButton OnClick="@(() => AddQuantity(Item))" Icon="@Icons.Material.Filled.ExpandLess" Size="Size.Small" />
+                    </MudTooltip>
+                </span>
+            </MudText>
+            <MudText Typo="Typo.caption"><strong>@((Item!.Quantity * Item.Price).ToString("N2"))</strong></MudText>
+        </MudStack>
+    </MudCardContent>
+</MudCard>
+
+
+@code {
+    [Parameter] public OrderItem? Item { get; set; } = default!;
+    [Parameter] public EventCallback RefreshUI { get; set; }
+
+    private void AddQuantity(OrderItem item)
+    {        
+        if (AppState!.Items!.Where(x => x.Id == item.Item!.Id).First().Quantity == 0)
+        {
+            snackBar.Add("Item is out of stock", Severity.Warning);
+            return;
+        }
+        AppState!.Order!.OrderItems!.Where(x => x.ItemId == item.ItemId).First().Quantity += 1;
+        AppState!.Items!.Where(x => x.Id == item.Item!.Id).First().Quantity -= 1;        
+        UpdateUI();
+    }
+
+    private void RemoveQuantity(OrderItem item)
+    {
+        item!.Quantity -= 1;
+        if (item!.Quantity == 0)
+        {
+            int qty = item.Quantity + 1;
+            AppState!.Order!.OrderItems!.Remove(item);
+            AppState!.Items!.Where(x => x.Id == item.Item!.Id).First().Quantity += qty;
+        }        
+        else
+        {
+            AppState!.Items!.Where(x => x.Id == item.Item!.Id).First().Quantity += 1;
+        }        
+        UpdateUI();
+    }
+
+    private async void RemoveItem(OrderItem item)
+    {
+        var prompt = await Dialog.ShowMessageBox("Confirmation", "Do you wish to remove item", yesText: "Yes", noText: "No");
+        if (prompt is null || !prompt.Value)
+            return;
+        AppState!.Order!.OrderItems!.Remove(item);        
+        AppState!.Items!.Where(x => x.Id == item.Item!.Id).First().Quantity += item.Quantity;        
+        UpdateUI();
+    }
+
+    void UpdateUI() => RefreshUI.InvokeAsync();
+
+}
+

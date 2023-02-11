@@ -1,0 +1,128 @@
+﻿@using AvilaNaturalle.Reports;
+@if (AppState.IsBusy)
+{
+    <Loader />
+}
+else
+{
+    <MudDialog>
+        <TitleContent>
+            <MudText Typo="Typo.h6">Debtors Report</MudText>
+        </TitleContent>
+        <DialogContent>
+            <MudGrid Class="pa-3" Spacing="2">
+                <MudItem xs="12" Class="d-flex align-center justify-center">
+                    <MudRadioGroup @bind-SelectedOption="SelectedOption">
+                        <MudRadio Color="Color.Tertiary" Option="@("All")">All Customer</MudRadio>
+                        <MudRadio Color="Color.Secondary" Option="@("Customer")">Customer</MudRadio>
+                    </MudRadioGroup>
+                </MudItem>
+                <MudItem xs="12">
+                    @if (SelectedOption == "Customer")
+                    {
+                        <MudSelect Dense="true" AnchorOrigin="Origin.BottomCenter" Strict="true" T="Customer"
+                           Label="Customer" Variant="Variant.Outlined" Value="@customer" ValueChanged="@CustomerChanged">
+                            @foreach (Customer customer in customers!)
+                            {
+                                <MudSelectItem Value="@customer">@customer.CustomerName</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+                </MudItem>                
+            </MudGrid>
+        </DialogContent>
+        <DialogActions>
+            <MudButton Disabled="AppState.IsProcessing" OnClick="GetReportItems" ButtonType="ButtonType.Submit" Variant="Variant.Filled"
+                   Color="Color.Primary">@(AppState.IsProcessing ? "Processing" : "Download")</MudButton>
+            </DialogActions>
+        </MudDialog>
+}
+
+@code {
+    [Parameter] public string? SelectedOption { get; set; }
+    [Parameter] public Customer? customer { get; set; } = new();
+    EsModuleFactory? moduleFactory;
+    Customer[]? customers;    
+
+    protected override async Task OnInitializedAsync()
+    {
+        AppState!.IsBusy = true;
+        await Task.Delay(200);
+        moduleFactory = new EsModuleFactory(js);
+        var db = new MyDb(moduleFactory!);
+        customers = await db.Customers.ToArray();
+        AppState!.IsBusy = false;
+    }    
+
+    void CustomerChanged(Customer customer)
+    {
+        this.customer = customer;
+        StateHasChanged();
+    }
+    async Task GetReportItems()
+    {
+        AppState.IsProcessing = true;
+        if (string.IsNullOrEmpty(SelectedOption))
+        {
+            snackBar.Add("Select an option to proceed", Severity.Warning);
+            AppState.IsProcessing = false;
+            return;
+        }        
+        string? reportHeader = string.Empty;
+        var db = new MyDb(moduleFactory!);
+        Order[]? orders = Array.Empty<Order>();
+        try
+        {
+            List<DebtorDataModel>? debtors = new();            
+            if (SelectedOption == "All")
+            {
+                orders = await db.Orders.ToArray();
+                debtors = orders.Where(x => x.Balance > 0).GroupBy(x => x.Customer!.Id).Select(x => new DebtorDataModel
+                    {
+                        CustomerName = x.Select(r => r.Customer!.CustomerName).First(),
+                        TotalAmount = x.Sum(d => d.TotalAmount),
+                        SubTotal = x.Sum(d => d.SubTotal),
+                        Discount = x.Sum(d => d.Discount),
+                        Paid = x.SelectMany(d => d.PaymentDetails!).Sum(x => x.Amount),
+                        Balance = x.Sum(d => d.Balance)
+                    }).ToList();
+                await js.InvokeVoidAsync("exportData", debtors);
+            }
+            else
+            {
+                orders = await db.Orders.Where(nameof(Order.CustomerId)).IsEqual(customer!.Id).ToArray();
+                debtors = orders.Where(x => x.Balance > 0).Select(x => new DebtorDataModel
+                    {
+                        CustomerName = x.Customer!.CustomerName,
+                        ReceiptNo = x.ReceiptNo,
+                        TransactionDate = x.TransactionDate,
+                        TotalAmount = x.TotalAmount,
+                        SubTotal = x.SubTotal,
+                        Discount = x.Discount,
+                        Paid = x.PaymentDetails!.Sum(x => x.Amount),
+                        Balance = x.Balance
+                    }).ToList();
+                await js.InvokeVoidAsync("exportData", debtors);
+            }
+
+            if (debtors!.Count == 0)
+            {
+                snackBar.Add("No data found", Severity.Warning);
+                AppState.IsProcessing = false;
+                return;
+            }
+            var report = new DebtorsReport(debtors, SelectedOption);
+            var bytes = report.Create();
+            await js.InvokeVoidAsync("exportFile", $"Debtors Report {DateTime.Now.Ticks}.pdf", Convert.ToBase64String(bytes));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
+        }
+        finally
+        {
+            await db.DisposeAsync();
+            AppState.IsProcessing = false;
+        }
+    }
+}

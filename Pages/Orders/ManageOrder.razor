@@ -1,0 +1,196 @@
+﻿@page "/manageorder"
+@using AvilaNaturalle.Reports;
+
+<style>
+    #figure{
+        text-align: right;
+    }
+</style>
+
+@if (AppState.IsBusy)
+{
+    <LoaderRows />
+}
+else
+{
+    <MudGrid Justify="@Justify.SpaceEvenly">
+        <MudItem xs="12" sm="6">
+            <MudTextField Label="Order ID" Variant="Variant.Outlined" ReadOnly="true" @bind-Value="AppState.Order.ReceiptNo" />
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudTextField Label="Order Date" Variant="Variant.Outlined" ReadOnly="true" @bind-Value="AppState.Order.TransactionDate" />
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudTextField Label="Customer Name" Variant="Variant.Outlined" ReadOnly="true" Value="AppState!.Order!.Customer!.CustomerName" />
+        </MudItem>        
+        <MudItem xs="12" sm="6">
+            <MudTextField id="figure" Label="Total Amount" Format="N2" Variant="Variant.Outlined" ReadOnly="true" Value="AppState.Order.TotalAmount" />
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudTextField id="figure" Label="Sub Total" Format="N2" Variant="Variant.Outlined" ReadOnly="true" Value="AppState.Order.SubTotal" />
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudTextField id="figure" Label="Discount" Format="N2" Variant="Variant.Outlined" ReadOnly="true" @bind-Value="AppState.Order.Discount" />
+        </MudItem>
+        @if (AkwaiBalance)
+        {
+            <MudItem xs="12" sm="6">
+                <MudTextField id="figure" Label="Balance" Format="N2" Variant="Variant.Outlined" ReadOnly="true" Value="AppState.Order.Balance" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField id="figure" Label="New Amount" Format="N2" Variant="Variant.Outlined" @bind-Value="AppState.Order.Pay" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect Strict="true" Variant="Variant.Outlined" Required="true" Dense="true"
+                   @bind-Value="AppState!.PaymentDetail!.PaymentMode" Label="Payment Mode" AnchorOrigin="Origin.BottomCenter">
+                    <MudSelectItem Value="@(PaymentMode.Cash)">Cash</MudSelectItem>
+                    <MudSelectItem Value="@(PaymentMode.POS)">POS</MudSelectItem>
+                    <MudSelectItem Value="@(PaymentMode.Transfer)">Transfer</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" Class="d-flex align-center justify-end mt-2">
+                <MudFab Label="@(AppState.IsProcessing ? "Processing" : "Pay")" Size="Size.Small" 
+                OnClick="@Pay" Style="width:200px" Color="Color.Primary" />
+            </MudItem>
+        }
+        <MudItem xs="12">
+            <MudTable Items="AppState.Order.PaymentDetails!.OrderByDescending(x => x.ModifiedTicks)" Dense="true" Context="PaymentsContext" Hover="true" Striped="true">
+                <ToolBarContent>
+                    <MudText Typo="@Typo.h6">Payment Details</MudText>
+                </ToolBarContent>
+                <HeaderContent>                    
+                    <MudTh>Date</MudTh>                  
+                    <MudTh>Time</MudTh>
+                    <MudTh Style="text-align:right;">Amount</MudTh>
+                    <MudTh>Payment Mode</MudTh>
+                    <MudTh>Actions</MudTh>                                                            
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Date">@PaymentsContext.PaymentDate.ToShortDateString()</MudTd>
+                    <MudTd DataLabel="Time">@PaymentsContext.PaymentDate.ToShortTimeString()</MudTd>
+                    <MudTd DataLabel="Amount" Style="text-align:right;">@PaymentsContext.Amount.ToString("N2")</MudTd>
+                    <MudTd DataLabel="PaymentMode">@PaymentsContext.PaymentMode</MudTd>
+                    <MudTd DataLabel="Actions">
+                        <MudTooltip Text="Print Receipt">
+                            <MudFab Icon="@Icons.Material.Filled.Print" 
+                                    Size="Size.Small" IconSize="Size.Small" Color="Color.Success" />
+                        </MudTooltip>
+                    </MudTd>                    
+                </RowTemplate>
+            </MudTable>
+        </MudItem>
+        <MudItem xs="12">
+            <MudTable Items="AppState.Order.OrderItems" Context="OrderDetailsContext" Hover="true"
+                        Striped="true" Outlined="true">
+                <ToolBarContent>
+                    <MudText Typo="@Typo.h6">Orders Items</MudText>
+                </ToolBarContent>
+                <HeaderContent>                                
+                    <MudTh>Item</MudTh>
+                    <MudTh Style="text-align:right;">Buy Price</MudTh>
+                    <MudTh Style="text-align:right;">Sell Price</MudTh>
+                    <MudTh Style="text-align:center;">Quantity</MudTh>
+                    <MudTh Style="text-align:right;">Cost</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Item">@OrderDetailsContext.Item!.ItemName</MudTd>
+                    <MudTd DataLabel="Buy Price" Style="text-align:right;">
+                        @OrderDetailsContext.Item!.BuyPrice!.Value.ToString("N2")
+                    </MudTd>
+                    <MudTd DataLabel="Sell Price" Style="text-align:right;">
+                        @OrderDetailsContext.Item!.SellPrice!.Value.ToString("N2")
+                    </MudTd>
+                    <MudTd DataLabel="Quantity" Style="text-align:center;">@OrderDetailsContext.Quantity</MudTd>
+                    <MudTd DataLabel="Cost" Style="text-align:right;">
+                        @(string.Format("{0}", (OrderDetailsContext.Quantity * OrderDetailsContext.Price).ToString("N2")))
+                    </MudTd>
+                </RowTemplate>
+                <PagerContent>
+                    <MudTablePager />
+                </PagerContent>
+            </MudTable>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <div class="d-flex align-center justify-center">
+                <MudFab Size="Size.Medium" OnClick="@NavigateBack" Style="width:200px" Color="Color.Dark" Label="Back" />
+            </div>
+        </MudItem>
+    </MudGrid>
+}
+@code {
+    bool AkwaiBalance = false;
+    EsModuleFactory? moduleFactory;
+    protected override async Task OnInitializedAsync()
+    {
+        AkwaiBalance = AppState.Order.Balance > 0 ? true : false;
+        if (AkwaiBalance)
+        {
+            AppState.PaymentDetail.Amount = new();
+            AppState.PaymentDetail.TransactionId = AppState.Order.Id;
+            AppState.PaymentDetail.PaymentMode = PaymentMode.Cash;
+        }
+        LayoutService.CurrentMenu = "Manage Order";
+        LayoutService.OnMajorUpdateOccured();
+        moduleFactory = new EsModuleFactory(js);
+        AppState.IsBusy = true;
+        await Task.Delay(200);
+        AppState.IsBusy = false;
+    }
+
+    private async Task Pay()
+    {
+        AppState!.IsProcessing = true;
+
+        if (AppState.Order.Pay > AppState.Order.SubTotal)
+        {
+            snackBar.Add("Amount should not be greater than amount due", Severity.Warning);
+            AppState!.IsProcessing = false;
+            return;
+
+        }
+
+        var prompt = await Dialog.ShowMessageBox("Confirmation", "Do you wish to make payment", yesText:"Yes", cancelText:"No");
+        if (prompt is null || !prompt.Value)
+        {
+            AppState!.IsProcessing = false;
+            return;
+        }
+        var db = new MyDb(moduleFactory!);
+        try
+        {
+            DateTime currentDate = DateTime.Now;
+            long currentTicks = currentDate.Ticks;
+            AppState.PaymentDetail.Id = Guid.NewGuid();
+            AppState.PaymentDetail.PaymentDate = currentDate;
+            AppState.PaymentDetail.Amount = AppState.Order.Pay;
+            AppState.PaymentDetail.IsDeleted = false;
+            AppState.PaymentDetail.ModifiedTicks = currentTicks;
+            AppState.Order.Pay = 0;
+            AppState.Order.PaymentDetails!.Add(AppState.PaymentDetail);
+            var qr = await _converter.GenerateQR(AppState.Order.Id);
+            var receipt = new Receipt(AppState.Order, qr);
+            var data = receipt.Create();
+            await db.Orders.Put(AppState.Order);
+            await js.InvokeVoidAsync("exportFile", $"Receipt {AppState.Order.ReceiptNo}.pdf", Convert.ToBase64String(data));
+            AkwaiBalance = AppState.Order.Balance > 0 ? true : false;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
+        }
+        finally
+        {
+            await db.DisposeAsync();
+            AppState!.IsProcessing = false;
+        }
+
+
+    }
+
+    void NavigateBack()
+    {        
+        nav.NavigateTo("orders");
+        AppState.Order = null!;
+    }
+}

@@ -1,0 +1,30 @@
+﻿@using System.Net.Http
+@using System.Net.Http.Json
+@using AvilaNaturalle.Handlers;
+@using AvilaNaturalle.Shared.Util;
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+@using Microsoft.AspNetCore.Components.WebAssembly.Http
+@using Microsoft.JSInterop
+@using AvilaNaturalle
+@using AvilaNaturalle.Shared
+@using AvilaNaturalle.Shared.Models
+@using MudBlazor
+@using Blazored.LocalStorage
+
+@inject NavigationManager nav
+@inject ILocalStorageService localStorage
+@inject IJSRuntime js
+@inject AppState AppState
+@inject LayoutService LayoutService
+
+@inject ISnackbar snackBar
+@inject IDialogService Dialog
+@inject IConverter _converter
+
+@using AvilaNaturalle.Data;
+@using Nosthy.Blazor.DexieWrapper.JsModule;
+
+@inject AppState AppState

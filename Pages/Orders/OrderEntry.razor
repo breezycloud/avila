@@ -1,0 +1,281 @@
+﻿@page "/neworder"
+@using AvilaNaturalle.Reports;
+@inject IConverter _converter
+
+<style>
+    #figure{
+        text-align: right;
+    }
+</style>
+
+@if (AppState.IsBusy)
+{
+    <LoaderRows />
+}
+else
+{
+            <MudGrid Spacing="0">
+                <MudItem xs="12" sm="6">
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudAutocomplete AnchorOrigin="Origin.BottomCenter" Dense="true" Label="Customer" T="Customer"
+                                         @bind-Value="AppState.Customer" SearchFunc="@SearchCustomer"
+                                         Variant="Variant.Outlined" Immediate="true" CoerceValue="true"
+                                         ToStringFunc="@(e => e == null ? null : $"{e.CustomerName}")" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField Label="Phone No" ReadOnly="true" Value="@AppState!.Customer!.MobileNo1" Variant="Variant.Outlined" />
+                        </MudItem>
+                        @*<MudItem xs="12" sm="3" md="3">
+                            <div class="d-flex align-center justify-center pa-3">
+                                <MudTooltip Text="Add Customer" Duration="1000">
+                                    <MudFab Label="New" Icon="@Icons.Material.Filled.Add" OnClick="@(() => nav.NavigateTo("newcustomer"))"
+                                        Color="Color.Primary" Size="Size.Medium" />
+                                </MudTooltip>
+                            </div>
+                        </MudItem>*@
+                        <MudItem xs="12" sm="6">
+                            <MudSelect Dense="true" AnchorOrigin="Origin.BottomCenter" Strict="true" T="Category"
+                                Label="Category" Value="AppState.Category" Variant="Variant.Outlined" ValueChanged="@CategoryValueChanged">
+                                @foreach (Category category in AppState.Categories)
+                                {
+                                    <MudSelectItem Value="@category">@category.CategoryName</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect Dense="true" AnchorOrigin="Origin.BottomCenter" Strict="true" T="Item"
+                                    Label="Item" MultiSelection="true" Variant="Variant.Outlined"
+                                    SelectedValuesChanged="@ItemValueChanged">
+                                @foreach (Item item in items)
+                                {
+                                    <MudSelectItem Value="@item">@item.ItemName</MudSelectItem>
+                                }
+                            </MudSelect>             
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField id="figure" Label="Total" Value="AppState.Order.TotalAmount"
+                                      Variant="Variant.Outlined" Disabled="true" Format="N2"
+                                      ReadOnly="true" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField id="figure" Label="Sub Total" Disabled="true" Value="@AppState.Order.SubTotal"
+                                Variant="Variant.Outlined" ReadOnly="true" T="decimal" Format="N2" />
+                        </MudItem>                        
+                        <MudItem xs="12" sm="6">
+                            <MudTextField id="figure" Disabled="true" ReadOnly="true" Format="N2" Label="Balance"
+                                      Variant="Variant.Outlined" Value="AppState!.Order.Balance" />
+                        </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField id="figure" Format="N2" Label="Amount Paid"
+                                  Variant="Variant.Outlined" @bind-Value="AppState!.Order!.Pay" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudSelect Strict="true" Variant="Variant.Outlined" Required="true" Dense="true"
+                                @bind-Value="PaymentMode" Label="Payment Mode" AnchorOrigin="Origin.BottomCenter">
+                            <MudSelectItem Value="@(PaymentMode.None)">None</MudSelectItem>
+                            <MudSelectItem Value="@(PaymentMode.Cash)">Cash</MudSelectItem>
+                            <MudSelectItem Value="@(PaymentMode.POS)">POS</MudSelectItem>
+                            <MudSelectItem Value="@(PaymentMode.Transfer)">Transfer</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <div class="d-flex justify-center align-center mt-3">
+                            <MudFab Color="Color.Primary" Label="@(AppState.IsProcessing ? "Processing" : "Save")" Style="width:200px;"
+                                Disabled="@AppState.IsProcessing" OnClick="CheckOut" Size="Size.Medium" EndIcon="@Icons.Material.Filled.Check" />
+                        </div>
+                    </MudItem>
+                        @*<MudItem xs="12" sm="6">
+                            <MudTextField id="figure" Format="N2" Disabled="true" ReadOnly="true" Label="Balance" T="decimal"
+                                      Variant="Variant.Outlined" Value="@AppState.Order.Balance" />
+                        </MudItem>              *@      
+                    </MudGrid>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudContainer Style="max-height: 455px; overflow-y:auto">
+                        @if (!AppState!.Order!.OrderItems!.Any())
+                        {
+                            <div class="d-flex align-center justify-center">
+                                <MudIcon Color="Color.Warning" Icon="@Icons.Material.Filled.ShoppingCart" 
+                                Size="Size.Large" Style="width:200px;height:200px" />
+                            </div>
+                            <MudText Align="Align.Center" Color="Color.Dark" Typo="Typo.body1">Empty Cart</MudText>
+                        
+                        }
+                        else
+                        {
+                            @foreach (var row in AppState!.Order!.OrderItems!)
+                            {
+                                <OrderItems Item="@row" RefreshUI="@RefreshUI" />
+                            }
+                        }                    
+                    </MudContainer>
+                </MudItem>
+        </MudGrid>
+
+}
+@code {
+    private PaymentMode PaymentMode { get; set; }
+    private decimal? AmountPaid { get; set; }
+    EsModuleFactory? moduleFactory;
+    protected override async Task OnInitializedAsync()
+    {
+        AppState.Order = new(); AppState.Customer = new(); AppState.Category = new();
+        LayoutService.CurrentMenu = "New Order";
+        LayoutService.OnMajorUpdateOccured();
+        AppState.IsBusy = true;
+        await Task.Delay(300);
+        moduleFactory = new EsModuleFactory(js);
+        await LoadItems();
+        AppState.IsBusy = false;
+    }
+    async Task LoadItems()
+    {
+        var db = new MyDb(moduleFactory!);        
+        try
+        {
+            AppState.Customers = await db.Customers.OrderBy(nameof(Customer.CustomerName)).ToArray();
+            AppState.Categories = await db.Categories.OrderBy(nameof(Category.CategoryName)).ToArray();
+            AppState.Items = await db.Items.OrderBy(nameof(Shared.Models.Item.ItemName)).ToArray();
+        }
+        catch (Exception)
+        {
+
+            throw;
+        }
+    }
+
+    private async Task<IEnumerable<Customer>> SearchCustomer(string value)
+    {
+        try
+        {
+            await Task.Delay(0);
+            if (string.IsNullOrEmpty(value))
+            {
+                return AppState.Customers;
+            }
+            return AppState.Customers.Where(x => x.CustomerName!.Contains(value, StringComparison.InvariantCultureIgnoreCase) 
+            || x.MobileNo1!.Contains(value, StringComparison.InvariantCultureIgnoreCase));
+        }
+        catch (System.Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+        return new HashSet<Customer>();
+    }
+    Item item { get; set; } = new();
+    Item[] items { get; set; } = Array.Empty<Item>();
+    void CategoryValueChanged(Category category)
+    {
+        items = AppState.Items.Where(x => x.CategoryId == category.Id).OrderBy(x => x.ItemName).ToArray();
+        AppState.Category = category;
+    }
+    decimal Discount { get; set; } = 0m;
+    void ItemValueChanged(IEnumerable<Item> items)
+    {
+        foreach (var item in items)
+        {
+            if (AppState!.Order!.OrderItems!.Any(x => x.ItemId == item.Id))
+            {
+                continue;
+            }
+            AppState.Order!.OrderItems!.Add(new OrderItem
+            {
+                Id = Guid.NewGuid(),
+                ItemId = item.Id,
+                Item = item,
+                Quantity = 1,
+                Price = item.SellPrice!.Value,
+                ModifiedTicks = DateTime.Now.Ticks
+            });
+            AppState!.Items!.Where(x => x.Id == item.Id).First().Quantity -= 1;
+
+        }       
+        RefreshUI();
+    }
+
+
+    async Task CheckOut()
+    {
+        AppState!.IsProcessing = true;
+        if (CheckOutValidation().Any())
+        {
+            AppState!.IsProcessing = false;
+            return;
+        }        
+        var prompt = await Dialog.ShowMessageBox("Confirmation", "Do you wish to check out item(s)", yesText: "Yes", noText: "No");
+        if (prompt is null || !prompt.Value)
+        {
+            AppState!.IsProcessing = false;
+            return;
+        }
+        var db = new MyDb(moduleFactory!);
+        try
+        {
+            DateTime currentDate = DateTime.Now;
+            long currentTicks = currentDate.Ticks;
+            Guid id = Guid.NewGuid();
+            AppState.Order.Id = id;
+            AppState.Order.TransactionDate = currentDate;
+            AppState.Order.ReceiptNo = DateTime.Now.ToString("ffffff");
+            AppState.Order.Customer = AppState.Customer;
+            AppState.Order.CustomerId = AppState.Customer.Id;
+            AppState.Order!.OrderItems!.ForEach(x => x.TransactionId = id);
+            AppState.Order.PaymentDetails!.Add(new OrderPayment
+            {
+                Id = Guid.NewGuid(),
+                PaymentDate = currentDate,
+                TransactionId = id,
+                Amount = AppState.Order.Pay,
+                PaymentMode = PaymentMode,
+                IsDeleted = false,
+                ModifiedTicks = currentTicks
+            });
+            var qr = await _converter.GenerateQR(id);
+            var receipt = new Receipt(AppState.Order, qr);
+            var data = receipt.Create();
+            await js.InvokeVoidAsync("exportFile", $"Receipt {AppState.Order.ReceiptNo}.pdf", Convert.ToBase64String(data));
+            AppState.Order.Customer = AppState.Customer;
+            await db.Orders.Add(AppState.Order);
+            var currentItems = AppState.Items!.ToList();
+            foreach (var r in currentItems)
+            {
+                await db.Items.Put(r);
+            }
+            AppState.Category = new();
+            AppState.Order = new();
+            AppState.Customer = new();
+            await LoadItems();
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine(ex);
+        }
+        finally
+        {
+            await db.DisposeAsync();
+            AppState!.IsProcessing = false;
+        }
+    }
+    public List<string> CheckOutValidation()
+    {
+        List<string> errors = new();
+        if (AppState.Customer.Id == Guid.Empty)
+        {
+            snackBar.Add("Select Customer", Severity.Warning);
+        }
+        if (AppState.Order!.OrderItems!.Count == 0)
+        {
+            snackBar.Add("Car is empty", Severity.Warning);
+        }
+        if (AppState.Order.Pay > AppState.Order.SubTotal)
+        {
+            snackBar.Add("Amount should not be greater than amount due", Severity.Warning);
+        }
+        return errors;
+    }
+    void RefreshUI() {        
+        StateHasChanged();
+    }
+
+}
